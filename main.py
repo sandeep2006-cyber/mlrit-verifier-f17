@@ -1,15 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import tldextract
-import dateparser
+import tldextract, dateparser, re, hashlib, sqlite3
 from datetime import datetime
-import re
-import hashlib
+from passlib.hash import pbkdf2_sha256
 
 app = FastAPI()
 
-# Enable CORS so your HTML file can talk to this Python server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,82 +14,87 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mock Database for Duplicate Detection (Hiding in memory for now)
-seen_hashes = {}
+# --- DATABASE SETUP ---
+def init_db():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)')
+    conn.commit()
+    conn.close()
 
-# OFFICIAL TRUSTED DOMAINS
-TRUSTED_DOMAINS = [
-    "google.com", "microsoft.com", "amazon.jobs", "amazon.com", "tcs.com",
-    "infosys.com", "wipro.com", "accenture.com", "internshala.com",
-    "unstop.com", "linkedin.com", "mlrit.ac.in", "github.com", "scholarships.gov.in"
-]
+init_db()
 
+# --- MODELS ---
+class UserAuth(BaseModel):
+    username: str
+    password: str
 
 class OpportunityRequest(BaseModel):
     content: str
 
+# --- AUTH ENDPOINTS ---
+@app.post("/signup")
+async def signup(user: UserAuth):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    try:
+        hashed_pw = pbkdf2_sha256.hash(user.password)
+        c.execute("INSERT INTO users VALUES (?, ?)", (user.username, hashed_pw))
+        conn.commit()
+        return {"message": "Account created! Now please Login."}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    finally:
+        conn.close()
 
-def get_text_hash(text):
-    """Creates a fingerprint of the text to detect viral spam."""
-    clean_text = "".join(text.lower().split())
-    return hashlib.md5(clean_text.encode()).hexdigest()
+@app.post("/login")
+async def login(user: UserAuth):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT password FROM users WHERE username = ?", (user.username,))
+    result = c.fetchone()
+    conn.close()
+    if result and pbkdf2_sha256.verify(user.password, result[0]):
+        return {"message": "Success", "username": user.username}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
 
+# --- VERIFICATION LOGIC ---
+TRUSTED_DOMAINS = ["google.com", "microsoft.com", "tcs.com", "internshala.com", "unstop.com", "mlrit.ac.in"]
+seen_hashes = {}
 
 @app.post("/verify")
 async def verify(request: OpportunityRequest):
     text = request.content
-    score = 0
-    warnings = []
-
-    # 1. URL EXTRACTION & SANITIZATION (The Fix for the "in"." error)
+    score, warnings = 0, []
+    
+    # URL Logic with Punctuation Fix
     urls = re.findall(r'(https?://\S+)', text)
     if urls:
-        # CLEANING: Removes trailing dots, quotes, brackets, etc.
-        raw_url = urls[0].strip('.,")\'!<>')
+        raw_url = urls[0].strip('.,")\'!<>') 
         ext = tldextract.extract(raw_url)
         domain = f"{ext.domain}.{ext.suffix}".lower()
+        if domain in TRUSTED_DOMAINS: score += 40
+        else: warnings.append(f"Domain '{domain}' is not in our trusted list.")
+    else: warnings.append("No official link found.")
 
-        if domain in TRUSTED_DOMAINS:
-            score += 40
-        else:
-            warnings.append(f"Domain '{domain}' is not in our trusted list.")
-    else:
-        warnings.append("No official link detected.")
-
-    # 2. NLP DATE EXTRACTION
-    # Looks for dates like 12/05/2026 or Dec 31
+    # Date Logic
     date_match = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|([A-Z][a-z]+ \d{1,2})', text)
     if date_match:
         deadline = dateparser.parse(date_match.group(0))
-        if deadline and deadline > datetime.now():
-            score += 40
-        else:
-            warnings.append("This opportunity appears to have expired.")
-    else:
-        warnings.append("No valid deadline found.")
+        if deadline and deadline > datetime.now(): score += 40
+        else: warnings.append("This appears to have expired.")
+    else: warnings.append("No deadline date detected.")
 
-    # 3. DUPLICATE DETECTION
-    text_hash = get_text_hash(text)
-    if text_hash in seen_hashes:
-        seen_hashes[text_hash] += 1
-        warnings.append(f"Spam Alert: This text was verified {seen_hashes[text_hash]} times.")
+    # Duplicate Logic
+    h = hashlib.md5("".join(text.lower().split()).encode()).hexdigest()
+    if h in seen_hashes:
+        seen_hashes[h] += 1
+        warnings.append(f"Duplicate alert: Checked {seen_hashes[h]} times.")
     else:
-        seen_hashes[text_hash] = 1
-        score += 20  # Points for being unique content
+        seen_hashes[h] = 1
+        score += 20
 
-    # FINAL STATUS
     status = "LEGITIMATE" if score >= 80 else "SUSPICIOUS"
-    if score < 40: status = "SCAM / EXPIRED"
+    if score < 40: status = "SCAM"
 
-    return {
-        "score": score,
-        "status": status,
-        "warnings": warnings,
-        "extracted_domain": domain if urls else None
-    }
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    return {"score": score, "status": status, "warnings": warnings}

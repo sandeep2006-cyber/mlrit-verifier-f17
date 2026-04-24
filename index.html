@@ -3,89 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Opportunity Verifier | MLRIT F17</title>
+    <title>Dashboard | MLRIT Verifier</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        // SECURITY CHECK: If no user is found in memory, send them to login page
+        if (!localStorage.getItem('mlrit_user')) {
+            window.location.href = "auth.html";
+        }
+    </script>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="bg-slate-50 min-h-screen">
 
-    <nav class="bg-blue-900 text-white p-6 shadow-xl">
-        <div class="max-w-4xl mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold">MLRIT <span class="font-light">Verifier</span></h1>
-            <div class="text-right">
-                <p class="text-xs font-mono">TEAM F17</p>
-                <p class="text-xs opacity-75">Review-1 Demo</p>
+    <nav class="bg-blue-900 text-white p-4 shadow-lg">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">MLRIT <span class="font-light">Verifier</span></h1>
+            <div class="flex items-center gap-4">
+                <span class="text-sm opacity-80">Hello, <b id="displayUser">User</b></span>
+                <button onclick="logout()" class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg text-xs font-bold transition-all">Logout</button>
             </div>
         </div>
     </nav>
 
-    <div class="max-w-2xl mx-auto mt-12 p-4">
-        <div class="bg-white rounded-3xl shadow-2xl p-8">
-            <h2 class="text-xl font-bold text-gray-800 mb-4">Paste Opportunity Below</h2>
-            <textarea id="userInput" rows="5" class="w-full p-4 border-2 border-gray-100 rounded-2xl focus:border-blue-500 focus:ring-0 transition-all mb-6 outline-none" placeholder="Paste link or WhatsApp message..."></textarea>
+    <div class="max-w-2xl mx-auto mt-12 p-6">
+        <div class="bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
+            <h2 class="text-2xl font-bold text-slate-800 mb-2">Check Authenticity</h2>
+            <p class="text-slate-500 mb-6">Paste the internship/scholarship text or link below.</p>
             
-            <button onclick="runAnalysis()" id="btn" class="w-full bg-blue-600 hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex justify-center items-center gap-3">
-                <i class="fa-solid fa-magnifying-glass-chart"></i> Analyze Opportunity
+            <textarea id="userInput" rows="5" class="w-full p-4 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none mb-4 transition-all" placeholder="Paste content here..."></textarea>
+            
+            <button onclick="verify()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all flex justify-center items-center gap-2">
+                <i class="fa-solid fa-shield-halved"></i> Analyze Opportunity
             </button>
         </div>
 
-        <div id="results" class="mt-8 hidden animate-bounce-in">
-            <div id="card" class="bg-white rounded-3xl shadow-2xl overflow-hidden border-t-8 border-blue-600">
-                <div class="p-8 flex items-center justify-between">
-                    <div>
-                        <p class="text-sm text-gray-400 uppercase font-bold tracking-widest">Verdict</p>
-                        <h3 id="status" class="text-3xl font-black italic">...</h3>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-sm text-gray-400 uppercase font-bold tracking-widest">Trust Score</p>
-                        <h3 id="score" class="text-5xl font-black text-blue-600">0%</h3>
-                    </div>
+        <div id="results" class="mt-8 hidden">
+            <div id="statusCard" class="bg-white rounded-3xl shadow-xl overflow-hidden border-t-8">
+                <div class="p-6 text-center">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">System Verdict</p>
+                    <h3 id="statusText" class="text-3xl font-black italic">...</h3>
+                    <div id="scoreBox" class="text-5xl font-black mt-2 text-blue-600">0%</div>
                 </div>
-                <div class="bg-gray-50 p-6 border-t border-gray-100">
-                    <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">Technical Analysis</h4>
-                    <ul id="warnings" class="space-y-2 text-sm text-gray-600"></ul>
+                <div class="bg-slate-50 p-6 border-t border-slate-100">
+                    <ul id="warningList" class="space-y-2 text-sm text-slate-600"></ul>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        async function runAnalysis() {
-            const text = document.getElementById('userInput').value;
+        // Display the logged-in username
+        document.getElementById('displayUser').innerText = localStorage.getItem('mlrit_user');
+
+        const API_URL = "https://your-backend-on-render.com"; // <-- REPLACE WITH YOUR RENDER URL
+
+        async function verify() {
+            const input = document.getElementById('userInput').value;
             const btn = document.getElementById('btn');
             const results = document.getElementById('results');
 
-            if(!text) return alert("Please paste some content!");
+            if(!input) return alert("Please paste some content!");
 
-            btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Processing...';
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Analyzing...';
             btn.disabled = true;
 
             try {
-                const response = await fetch('https://mlrit-verifier-backend.onrender.com/verify', {
+                const response = await fetch(`${API_URL}/verify`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ content: text })
+                    body: JSON.stringify({ content: input })
                 });
                 const data = await response.json();
 
                 results.classList.remove('hidden');
-                document.getElementById('score').innerText = data.score + "%";
-                document.getElementById('status').innerText = data.status;
+                document.getElementById('scoreBox').innerText = data.score + "%";
+                document.getElementById('statusText').innerText = data.status;
                 
-                // Color change based on status
-                const card = document.getElementById('card');
-                if(data.score >= 80) card.className = "bg-white rounded-3xl shadow-2xl overflow-hidden border-t-8 border-green-500";
-                else if(data.score >= 50) card.className = "bg-white rounded-3xl shadow-2xl overflow-hidden border-t-8 border-yellow-500";
-                else card.className = "bg-white rounded-3xl shadow-2xl overflow-hidden border-t-8 border-red-500";
+                // Color Logic
+                const card = document.getElementById('statusCard');
+                if(data.score >= 80) card.style.borderColor = "#22c55e"; // Green
+                else if(data.score >= 50) card.style.borderColor = "#eab308"; // Yellow
+                else card.style.borderColor = "#ef4444"; // Red
 
-                document.getElementById('warnings').innerHTML = data.warnings.map(w => `<li class="flex items-center gap-2"><i class="fa-solid fa-circle-check text-blue-500 text-[8px]"></i> ${w}</li>`).join('');
+                document.getElementById('warningList').innerHTML = data.warnings.map(w => 
+                    `<li class="flex items-start gap-2"><i class="fa-solid fa-circle-info mt-1 text-blue-400"></i> ${w}</li>`
+                ).join('');
 
-            } catch (e) {
-                alert("Make sure main.py is running!");
+            } catch (err) {
+                alert("Connection Error. Is your backend server running?");
             } finally {
-                btn.innerHTML = '<i class="fa-solid fa-magnifying-glass-chart"></i> Analyze Opportunity';
+                btn.innerHTML = '<i class="fa-solid fa-shield-halved"></i> Analyze Opportunity';
                 btn.disabled = false;
             }
+        }
+
+        function logout() {
+            localStorage.removeItem('mlrit_user'); // Clear the session
+            window.location.href = "auth.html"; // Send back to login
         }
     </script>
 </body>

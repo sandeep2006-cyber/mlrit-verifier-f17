@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><title>MLRIT Verifier | Auth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-3xl shadow-2xl w-96 border-t-8 border-blue-900">
+        <h2 id="t" class="text-2xl font-bold mb-6">Login</h2>
+        <input type="text" id="u" placeholder="Username" class="w-full p-3 border rounded-xl mb-4">
+        <input type="password" id="p" placeholder="Password" class="w-full p-3 border rounded-xl mb-6">
+        <button onclick="auth()" id="btn" class="w-full bg-blue-900 text-white p-4 rounded-xl font-bold">Login</button>
+        <p class="mt-4 text-sm text-center">
+            <a href="#" onclick="toggle()" id="sw" class="text-blue-600">Need an account? Sign Up</a>
+        </p>
+    </div>
+    <script>
+        let isLogin = true;
+        const api = "https://your-backend.onrender.com"; // CHANGE TO YOUR RENDER URL
+
+        function toggle() {
+            isLogin = !isLogin;
+            document.getElementById('t').innerText = isLogin ? "Login" : "Sign Up";
+            document.getElementById('btn').innerText = isLogin ? "Login" : "Create Account";
+            document.getElementById('sw').innerText = isLogin ? "Need an account? Sign Up" : "Have an account? Login";
+        }
+
+        async function auth() {
+            const username = document.getElementById('u').value;
+            const password = document.getElementById('p').value;
+            const res = await fetch(`${api}${isLogin ? '/login' : '/signup'}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if(isLogin) {
+                    localStorage.setItem('mlrit_user', data.username);
+                    window.location.href = "index.html";
+                } else { alert("Signup Success! Now Login."); toggle(); }
+            } else { alert(data.detail); }
+        }
+    </script>
+</body>
+</html>
